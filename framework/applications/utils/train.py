@@ -50,7 +50,7 @@ def freeze_batch_norm_layers(model):
             mod.eval()
 
 def train_classification_model(model, optimizer, criterion, trainloader, device,
-                         verbose=True, max_batches=None, freeze_batch_norm=False):
+                         verbose=True, max_batches=None, freeze_batch_norm=False, return_model=False):
     """
     Parameters
     ----------
@@ -115,5 +115,8 @@ def train_classification_model(model, optimizer, criterion, trainloader, device,
 
     acc = correct * 100.0 / total
     mean_train_loss = np.mean(train_loss)
-    
-    return acc, mean_train_loss
+
+    if return_model:
+        return acc, mean_train_loss, model
+    else:
+        return acc, mean_train_loss

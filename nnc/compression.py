@@ -45,16 +45,17 @@ assert sys.version_info >= (3, 6)
 import os
 os.environ['TF_CPP_MIN_LOG_LEVEL'] = '3'
 import numpy as np
+import wandb
 import copy
+import bz2
 from timeit import default_timer as timer
 
 import nnc_core
 from nnc_core import nnr_model
 
-from framework import tensorflow_model
-from framework import pytorch_model
-
-#import torch
+from framework import tensorflow_model, pytorch_model, use_case_init
+from framework.applications.utils.metrics import get_entropy
+from framework.applications.utils.huffman_encode import huffman_encode
 
 def __print_output_line( outputString, verbose=True ):
     if verbose:
@@ -114,14 +115,16 @@ def compress_model( model_path_or_object,
                     model_executer=None,
                     model_struct=None,
                     dataset_path=None,
+                    use_case=None,
                     learning_rate=1e-4,
                     batch_size=64,
                     epochs=30,
-                    max_batches=600,
+                    max_batches=None,
                     num_workers=8,
                     return_model_data=False,
                     verbose=True,
                     return_bitstream=False,
+                    wandb_logging=False
                    ):
 
     is_pyt_model = False
@@ -140,6 +143,9 @@ def compress_model( model_path_or_object,
                  model_path_or_object,
                 )
         else:
+            if use_case != None:
+                assert use_case in use_case_init.use_cases.keys(), \
+                    f"use case must be one of {list(use_case_init.use_cases.keys())}"
             nnc_mdl, nnc_mdl_executer, model_parameters = tensorflow_model.create_NNC_model_instance_from_object(
                 model_path_or_object,
                 dataset_path=dataset_path,
@@ -147,7 +153,8 @@ def compress_model( model_path_or_object,
                 batch_size=batch_size,
                 num_workers=num_workers,
                 model_struct=model_struct,
-                model_name=model_name
+                model_name=model_name,
+                use_case=use_case
                 )
     elif pytorch_model.is_pyt_model(model_path_or_object):
         is_pyt_model = True
@@ -155,7 +162,10 @@ def compress_model( model_path_or_object,
                 nnc_mdl, _, model_parameters = pytorch_model.create_NNC_model_instance_from_object(
                  model_path_or_object,
                 )
-        else:    
+        else:
+            if use_case != None:
+                assert use_case in use_case_init.use_cases.keys(), \
+                    f"use case must be one of {list(use_case_init.use_cases.keys())}"
             nnc_mdl, nnc_mdl_executer, model_parameters = pytorch_model.create_NNC_model_instance_from_object(
                 model_path_or_object,
                 dataset_path=dataset_path,
@@ -166,6 +176,7 @@ def compress_model( model_path_or_object,
                 lsa=lsa,
                 epochs=epochs,
                 max_batches=max_batches,
+                use_case=use_case
                 )
     elif os.path.exists( os.path.expanduser(model_path_or_object)):
         model_path_or_object = os.path.expanduser(model_path_or_object)
@@ -221,7 +232,11 @@ def compress_model( model_path_or_object,
         nnc_mdl_executer = model_executer    
     
     if block_id_and_param_type is None and (bnf or lsa) and (is_pyt_model or is_tef_model):
-        block_id_and_param_type = nnc_mdl.guess_block_id_and_param_type(model_parameters)
+        if is_pyt_model:
+            bn_info = nnc_mdl.get_torch_bn_info(model_path_or_object)
+            block_id_and_param_type = nnc_mdl.guess_block_id_and_param_type(model_parameters, bn_info=bn_info)
+        else:
+            block_id_and_param_type = nnc_mdl.guess_block_id_and_param_type(model_parameters)
         blkIdParamTypeOk = nnc_core.nnr_model.sanity_check_block_id_and_param_type( block_id_and_param_type, model_parameters )
         if blkIdParamTypeOk == False:
             print("INFO: Sanity check for block_id_and_param_type failed! block_id_and_param_type has been set to 'None', and the flags 'lsa' and 'bnf' have been set to 'False'!")
@@ -258,9 +273,14 @@ def compress_model( model_path_or_object,
                             model_executer=nnc_mdl_executer,
                             verbose=verbose,
                             return_bitstream=return_bitstream,
+                            return_bn_beta_ids=bnf and is_pyt_model,
+                            wandb_logging=wandb_logging
                             )
 
-    if return_model_data==True:
+    if bnf:
+        block_id_and_param_type["bnf_matching"], bitstream = bitstream[1], bitstream[0]
+
+    if return_model_data==True or (bnf and is_pyt_model):
         if return_bitstream:
             return bitstream, block_id_and_param_type
         else:
@@ -292,6 +312,8 @@ def compress(
     model_executer=None,
     verbose=True,
     return_bitstream=False,
+    return_bn_beta_ids=False,
+    wandb_logging=False
     ):
 
     try:
@@ -394,7 +416,8 @@ def compress(
             lsa,
             fine_tune,
             use_dq,
-            verbose
+            verbose,
+            wandb_logging
         )
         end = timer()
         __print_output_line("DONE in {:.4f} s\n".format( end-start ), verbose=verbose)  
@@ -419,22 +442,93 @@ def compress(
 
     start = timer()
     __print_output_line("ENCODING...", verbose=verbose)
-    bitstream = nnc_core.coder.encode(  enc_info, 
-                                    nnc_mdl.model_info, 
-                                    approx_data_enc
-                                 )
+    bitstream, bs_sizes = nnc_core.coder.encode(  enc_info,
+                                                     nnc_mdl.model_info,
+                                                     approx_data_enc,
+                                                     return_bs_sizes=True
+                                                     )
     end = timer()
     __print_output_line("DONE in {:.4f} s\n".format( end-start ), verbose=verbose)
 
+    if wandb_logging:
+
+        flattened_integer_repr = {n: p.flatten() for n, p in approx_data_enc["parameters"].items()}
+        huffman_num_bytes_per_param = {n: (huffman_encode(p)[1] + huffman_encode(p)[4]) // 8 for n, p in flattened_integer_repr.items()}
+        bzip2_num_bytes_per_param = {n: len(bz2.compress(p)) for n, p in approx_data_enc["parameters"].items()}
+
+        total_params = sum([tensor.size for tensor in approx_data_enc["parameters"].values()])
+        entropy_per_tensor = {t_id: get_entropy(tensor) for t_id, tensor in approx_data_enc["parameters"].items()}
+        rel_entropy = {t_id: entropy_per_tensor[t_id] * (tensor.size/total_params) for t_id, tensor in approx_data_enc["parameters"].items()}
+        net_entropy = sum(list(rel_entropy.values()))
+        shannon_bound_per_tensor = {t_id: int(entropy_per_tensor[t_id] * tensor.size / 8) for t_id, tensor in approx_data_enc["parameters"].items()}
+
+        num_bytes_per_ndu_cabac = bs_sizes["cabac_num_bytes_per_ndu"]
+        num_bytes_per_ndu_shannon = {n: sum([shannon_bound_per_tensor[j] for j in n.split("---")])
+                                     if len(n.split("---")) > 1 else shannon_bound_per_tensor[n]
+                                     for n in num_bytes_per_ndu_cabac.keys()}
+        num_bytes_per_ndu_huffman = {n: sum([huffman_num_bytes_per_param[j] for j in n.split("---")])
+                                     if len(n.split("---")) > 1 else huffman_num_bytes_per_param[n]
+                                     for n in num_bytes_per_ndu_cabac.keys()}
+        num_bytes_per_ndu_bzip2 = {n: sum([bzip2_num_bytes_per_param[j] for j in n.split("---")])
+                                     if len(n.split("---")) > 1 else bzip2_num_bytes_per_param[n]
+                                     for n in num_bytes_per_ndu_cabac.keys()}
+
+        wandb.log({"entropy_per_tensor": entropy_per_tensor,
+                   "integer_repr": approx_data_enc["parameters"],
+                   "qp_values": approx_data_enc["qp"],
+                   "net_entropy": net_entropy,
+                   "bs_size_minus_hls": len(bitstream) - bs_sizes["net_hls"],
+                   "hls_size": bs_sizes["net_hls"],
+                   "num_bytes_per_ndu_shannon": num_bytes_per_ndu_shannon,
+                   "num_bytes_per_ndu_bzip2": num_bytes_per_ndu_bzip2,
+                   "num_bytes_per_ndu_huffman": num_bytes_per_ndu_huffman,
+                   "num_bytes_per_ndu_cabac": num_bytes_per_ndu_cabac,
+                   "num_bytes_net_shannon": sum(num_bytes_per_ndu_shannon.values()),
+                   "num_bytes_net_bzip2": sum(num_bytes_per_ndu_bzip2.values()),
+                   "num_bytes_net_huffman": sum(num_bytes_per_ndu_huffman.values()),
+                   "num_bytes_net_cabac": sum(num_bytes_per_ndu_cabac.values()),
+                   "model_original_size": nnc_mdl.model_info["original_size"]
+                   })
+
+        ##TODO make this more general --- it's just a fix for the GPU cluster
+
+        save_path = f"./{bitstream_path.split('/')[1]}" if bitstream_path.split('/')[1] != "mnt" else f"/{bitstream_path.split('/')[1]}/{bitstream_path.split('/')[2]}"
+        print(f"RESULTS_DIR: /{bitstream_path.split('/')[1]}/{bitstream_path.split('/')[2]}")
+        print(f"RESULTS_DIR: /{save_path}")
+
+
+        np.save(f"{save_path}/entropy_per_tensor.npy", entropy_per_tensor)
+        np.save(f"{save_path}/integer_repr.npy", approx_data_enc["parameters"])
+        np.save(f"{save_path}/qp_values.npy", approx_data_enc["qp"])
+        np.save(f"{save_path}/net_entropy.npy", net_entropy)
+        np.save(f"{save_path}/bs_size_minus_hls.npy", len(bitstream) - bs_sizes["net_hls"])
+        np.save(f"{save_path}/hls_size.npy", bs_sizes["net_hls"])
+        np.save(f"{save_path}/num_bytes_per_ndu_shannon.npy", num_bytes_per_ndu_shannon)
+        np.save(f"{save_path}/num_bytes_per_ndu_bzip2.npy", num_bytes_per_ndu_bzip2)
+        np.save(f"{save_path}/num_bytes_per_ndu_huffman.npy", num_bytes_per_ndu_huffman)
+        np.save(f"{save_path}/num_bytes_per_ndu_cabac.npy", num_bytes_per_ndu_cabac)
+        np.save(f"{save_path}/num_bytes_net_shannon.npy", sum(num_bytes_per_ndu_shannon.values()))
+        np.save(f"{save_path}/num_bytes_net_bzip2.npy", sum(num_bytes_per_ndu_bzip2.values()))
+        np.save(f"{save_path}/num_bytes_net_huffman.npy", sum(num_bytes_per_ndu_huffman.values()))
+        np.save(f"{save_path}/num_bytes_net_cabac.npy", sum(num_bytes_per_ndu_cabac.values()))
+        np.save(f"{save_path}/model_original_size.npy", nnc_mdl.model_info["original_size"])
+
+
+
     original_size = nnc_mdl.model_info["original_size"]
 
-    __print_output_line("COMPRESSED FROM {} BYTES TO {} BYTES ({} KB, {} MB, COMPRESSION RATIO: {:.2f} %) in {:.4f} s\n".format(original_size, len(bitstream), len(bitstream)/1000.0, len(bitstream)/1000000.0, len(bitstream)/original_size*100, end-start_overall), verbose=verbose)
+    __print_output_line("COMPRESSED FROM {} BYTES TO {} BYTES ({:.2f} KB, {:.2f} MB, COMPRESSION RATIO: {:.2f} %) in {:.4f} s\n".format(original_size, len(bitstream), len(bitstream)/1000.0, len(bitstream)/1000000.0, len(bitstream)/original_size*100, end-start_overall), verbose=True)
     
     if bitstream_path is not None:
         with open( bitstream_path, "wb" ) as br_file:
             br_file.write( bitstream )
 
-    if return_bitstream:
+    if return_bitstream and return_bn_beta_ids:
+        bn_info = model.get_torch_bn_info(model_executer.model)
+        bn_beta_match = {k: b for k, b in zip([k for k in approx_data_enc['qp'] if k.endswith('.weight.bias')],
+                                              [b for b in bn_info if b.endswith('.bias') and bn_info[b]])}
+        return (bitstream, bn_beta_match)
+    elif return_bitstream:
         return bitstream
 
 

@@ -136,7 +136,7 @@ def __get_topology_elem_id_order(compressed_parameter_types):
     return id_list
                 
     
-def encode(enc_info, model_info, approx_data):
+def encode(enc_info, model_info, approx_data, return_bs_sizes=False):
     ndu_start = syntax_compiler.compile_start_unit(0)
     bs = hls.encode_nnr_unit_with_size_dummy( ndu_start )
     bs, _ = hls.update_nnr_unit_size( bs )
@@ -146,7 +146,10 @@ def encode(enc_info, model_info, approx_data):
     bs_mps, _ = hls.update_nnr_unit_size( bs_mps )
     bs.extend(bs_mps)
 
-    
+    if return_bs_sizes:
+        bs_hls_size = 0
+        cabac_num_bytes_per_ndu = {}
+
     if model_info["topology_storage_format"] is not None:
         tpl = syntax_compiler.compile_tpl( model_info )
         bs_tpl = hls.encode_nnr_unit_with_size_dummy( tpl )
@@ -162,6 +165,8 @@ def encode(enc_info, model_info, approx_data):
                 num_coded_params += 1
 
         bs_par = bytearray( encoder.finish().tobytes() )
+        if return_bs_sizes:
+            cabac_num_bytes_per_ndu['---'.join(params)] = len(bs_par)
 
         decoder = deepCABAC.Decoder()
         decoder.setStream( bs_par )
@@ -184,7 +189,14 @@ def encode(enc_info, model_info, approx_data):
         bs_ndu, _ = hls.update_nnr_unit_size(bs_ndu)
         bs.extend( bs_ndu )
 
-    return bs
+        if return_bs_sizes:
+            bs_hls_size += (len(bs_ndu) - len(bs_par))
+
+    if return_bs_sizes:
+        bs_hls_size += len(bs_mps)
+        return bs, {"cabac_num_bytes_per_ndu": cabac_num_bytes_per_ndu, "net_hls": bs_hls_size}
+    else:
+        return bs
     
 
 def __decode_nnr_start_unit(nnr_gen, ndu_start, hls_stats = {}):

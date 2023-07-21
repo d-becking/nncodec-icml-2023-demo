@@ -1,7 +1,7 @@
 '''
 The copyright in this software is being made available under the Clear BSD
-License, included below. No patent rights, trademark rights and/or 
-other Intellectual Property Rights other than the copyrights concerning 
+License, included below. No patent rights, trademark rights and/or
+other Intellectual Property Rights other than the copyrights concerning
 the Software are granted under this license.
 
 The Clear BSD License
@@ -37,36 +37,24 @@ IN CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE)
 ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE
 POSSIBILITY OF SUCH DAMAGE.
 '''
-import numpy as np
-import torch
 
-def get_topk_accuracy_per_batch(output, target, topk=(1,)):
-    """Computes the accuracy over the k top predictions for the specified values of k"""
-    with torch.no_grad():
-        maxk = max(topk)
-        batch_size = target.size(0)
+from .ResNet_CIFAR import resnet20, resnet20_client_split, resnet20_server_split, resnet56, resnet56_client_split, resnet56_server_split
 
-        _, pred = output.topk(maxk, 1, True, True)
-        pred = pred.t()
-        correct = pred.eq(target.reshape(1, -1).expand_as(pred))
+__all__ = ['resnet20', 'resnet56']
 
-        res = []
-        for k in topk:
-            correct_k = correct[:k].reshape(-1).float().sum(0, keepdim=True)
-            res.append(correct_k.mul_(100.0 / batch_size))
-
-        return res
-
-
-def get_pmf(quant_tensor):
-    """
-    Calculates the probabilitiy mass function (pmf) which here simply is the number of weights assigned to a
-    specific centroid devided by th number of all weights.
-    """
-    _, C_cts = np.unique(quant_tensor, return_counts=True)
-    return C_cts / quant_tensor.size
-
-def get_entropy(quant_tensor):
-    """ Calculates the entropy of a quantized weight tensor."""
-    pmf = get_pmf(quant_tensor)
-    return sum([-P * np.log2(P) for P in pmf if P != 0])
+def init_model(model_name, num_classes=100, pretrained=False):
+    ##################################
+    if model_name == 'resnet20':
+        model = resnet20()
+    elif model_name == 'resnet20_client':
+        model = resnet20_client_split()
+    elif model_name == 'resnet20_server':
+        model = resnet20_server_split()
+    ##################################
+    elif model_name == 'resnet56':
+        model = resnet56(class_num=num_classes)
+    elif model_name == 'resnet56_client':
+        model = resnet56_client_split()
+    elif model_name == 'resnet56_server':
+        model = resnet56_server_split(class_num=num_classes)
+    return model

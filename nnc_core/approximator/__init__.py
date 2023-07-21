@@ -449,7 +449,7 @@ def inference_based_qp_opt(
     approx_info.update(approx_info_qp)
 
 
-def run_ft_and_lsa(model_info, approx_data, ap_info, model_executer, block_id_and_param_type, lsa_flag, ft_flag, use_dq, verbose):
+def run_ft_and_lsa(model_info, approx_data, ap_info, model_executer, block_id_and_param_type, lsa_flag, ft_flag, use_dq, verbose, wandb_logging):
     approx_info_ft = copy.deepcopy(ap_info.approx_info)
     if not lsa_flag:
         approx_info_ft["to_approximate"] = W_TYPES
@@ -464,6 +464,8 @@ def run_ft_and_lsa(model_info, approx_data, ap_info, model_executer, block_id_an
         lsa_flag=lsa_flag,
         ft_flag=ft_flag,
         verbose=verbose,
+        wandb_logging=wandb_logging
+
     )
     
     lsa_params = tuned_params[0]

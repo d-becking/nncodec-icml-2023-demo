@@ -48,8 +48,25 @@ import torch.nn as nn
 from torch.functional import F
 import cv2 as cv
 import numpy as np
+from torchvision import transforms
 
+MDL_TRAFOS = [
+    "model_transform_ImageNet_to_CIFAR100",
+    "LSA"
+]
 
+DATA_TRAFOS = [
+    "transforms_tef_model_zoo",
+    "transforms_pyt_model_zoo"
+]
+
+transforms_pyt_model_zoo = transforms.Compose([
+    transforms.Resize(256),
+    transforms.CenterCrop(224),
+    transforms.ToTensor(),
+    transforms.Normalize(mean=[0.485, 0.456, 0.406],
+                         std=[0.229, 0.224, 0.225]),
+])
 def transforms_tef_model_zoo(filename, label, image_size=224):
 
     img = cv.imread(filename.numpy().decode()).astype(np.float32)
@@ -76,6 +93,19 @@ def transforms_tef_model_zoo(filename, label, image_size=224):
 
     return img, label
 
+def model_transform_ImageNet_to_CIFAR100(original_model):
+    if original_model.__class__.__name__ == 'ResNet':
+        if hasattr(original_model, "fc"):
+            classifier_in = original_model.fc.weight.shape[1]
+            original_model.fc = nn.Linear(classifier_in, 100)
+    elif 'MobileNet' in original_model.__class__.__name__ or\
+            'EfficientNet' in original_model.__class__.__name__:
+        idx = 1 if not 'V3' in original_model.__class__.__name__ else 3
+        if hasattr(original_model, "classifier"):
+            classifier_in = original_model.classifier[idx].weight.shape[1]
+            original_model.classifier[idx] = nn.Linear(classifier_in, 100)
+    return original_model
+
 class ScaledConv2d(nn.Conv2d):
     def __init__(self, in_channels, out_channels, *args, **kwargs):
         super().__init__(in_channels, out_channels, *args, **kwargs)
@@ -85,7 +115,7 @@ class ScaledConv2d(nn.Conv2d):
     def reset_parameters(self):
         # The if condition is added so that the super call in init does not reset_parameters as well.
         if hasattr(self, 'weight_scaling'):
-            nn.init.normal_(self.weight_scaling, 1, 1e-5)
+            nn.init.normal_(self.weight_scaling, 1, 0)#1e-5)
             super().reset_parameters()
 
     def forward(self, input):
@@ -104,16 +134,14 @@ class ScaledLinear(nn.Linear):
     def reset_parameters(self):
         # The if condition is added so that the super call in init does not reset_parameters as well.
             if hasattr(self, 'weight_scaling'):
-                nn.init.normal_(self.weight_scaling, 1, 1e-5)
+                nn.init.normal_(self.weight_scaling, 1, 0)#1e-5)
                 super().reset_parameters()
 
     def forward(self, input):
         return F.linear(input, self.weight_scaling * self.weight, self.bias)
 
 class LSA:
-    def __init__(self,
-                 original_model):
-
+    def __init__(self, original_model):
         self.mdl = copy.deepcopy(original_model)
 
     def update_conv2d(self, m, parent):
@@ -127,39 +155,15 @@ class LSA:
         lsa_update.weight, lsa_update.bias = m[1].weight, m[1].bias
         setattr(parent, m[0], lsa_update)
 
+    def add_lsa_params_recursive(self, module):
+        for name, child in module.named_children():
+            if isinstance(child, nn.Conv2d) and child.weight.requires_grad:
+                self.update_conv2d((name, child), module)
+            elif isinstance(child, nn.Linear) and child.weight.requires_grad:
+                self.update_linear((name, child), module)
+            elif len(list(child.children())) > 0:
+                self.add_lsa_params_recursive(child)
+
     def add_lsa_params(self):
-        '''
-        adds LSA scaling parameters to conv and linear layers
-            - max. nested object depth: 4
-            - trainable_true (i.e. does not add LSA params to layers which are not trained, e.g. in classifier only training)
-        '''
-        for m in self.mdl.named_children():
-            if isinstance(m[1], nn.Conv2d) and m[1].weight.requires_grad:
-                self.update_conv2d(m, self.mdl)
-            elif isinstance(m[1], nn.Linear) and m[1].weight.requires_grad:
-                self.update_linear(m, self.mdl)
-            elif len(dict(m[1].named_children())) > 0:
-                for n in m[1].named_children():
-                    if isinstance(n[1], nn.Conv2d) and n[1].weight.requires_grad:
-                        self.update_conv2d(n, m[1])
-                    elif isinstance(n[1], nn.Linear) and n[1].weight.requires_grad:
-                        self.update_linear(n, m[1])
-                    elif len(dict(n[1].named_children())) > 0:
-                        for o in n[1].named_children():
-                            if isinstance(o[1], nn.Conv2d) and o[1].weight.requires_grad:
-                                self.update_conv2d(o, n[1])
-                            elif isinstance(o[1], nn.Linear) and o[1].weight.requires_grad:
-                                self.update_linear(o, n[1])
-                            elif len(dict(o[1].named_children())) > 0:
-                                for p in o[1].named_children():
-                                    if isinstance(p[1], nn.Conv2d) and p[1].weight.requires_grad:
-                                        self.update_conv2d(p, o[1])
-                                    elif isinstance(p[1], nn.Linear) and p[1].weight.requires_grad:
-                                        self.update_linear(p, o[1])
-                                    elif len(dict(p[1].named_children())) > 0:
-                                        for q in p[1].named_children():
-                                            if isinstance(q[1], nn.Conv2d) and q[1].weight.requires_grad:
-                                                self.update_conv2d(q, p[1])
-                                            elif isinstance(q[1], nn.Linear) and q[1].weight.requires_grad:
-                                                self.update_linear(q, p[1])
+        self.add_lsa_params_recursive(self.mdl)
         return self.mdl

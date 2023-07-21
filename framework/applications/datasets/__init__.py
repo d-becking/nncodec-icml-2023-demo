@@ -39,3 +39,6 @@ POSSIBILITY OF SUCH DAMAGE.
 '''
 
 from .imagenet import ImageNetDataset
+from .cifar import CIFAR100dataset
+
+__all__ = ['CIFAR100dataset', 'ImageNetDataset']

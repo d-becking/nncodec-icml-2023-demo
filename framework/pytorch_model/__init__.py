@@ -46,6 +46,7 @@ from framework.use_case_init import use_cases
 from framework.applications.utils import evaluation, transforms
 import torch
 from collections import OrderedDict
+import wandb
 
 
 def is_pyt_model( model_object ):
@@ -92,7 +93,8 @@ def create_NNC_model_instance_from_file(
                  batch_size=64,
                  num_workers=1,
                  model_struct=None,
-                 lsa=False
+                 lsa=False,
+                 use_case=None
                 ):
 
     PYTModel = PytorchModel()
@@ -101,15 +103,16 @@ def create_NNC_model_instance_from_file(
         model_struct = loaded_model_struct
 
     if dataset_path and model_struct:
-        PYTModelExecuter = create_imagenet_model_executer(model_struct=model_struct,
-                                                          dataset_path=dataset_path,
-                                                          lr=lr,
-                                                          epochs=epochs,
-                                                          max_batches=max_batches,
-                                                          batch_size=batch_size,
-                                                          num_workers=num_workers,
-                                                          lsa=lsa
-                                                          )
+        PYTModelExecuter = create_model_executer(model_struct=model_struct,
+                                                 dataset_path=dataset_path,
+                                                 lr=lr,
+                                                 epochs=epochs,
+                                                 max_batches=max_batches,
+                                                 batch_size=batch_size,
+                                                 num_workers=num_workers,
+                                                 lsa=lsa,
+                                                 use_case=use_case
+                                                 )
         if lsa:
             model_parameters = PYTModel.init_model_from_dict(PYTModelExecuter.model.state_dict())
     else:
@@ -127,7 +130,8 @@ def create_NNC_model_instance_from_object(
                  batch_size=64,
                  num_workers=1,
                  model_struct=None,
-                 lsa=False
+                 lsa=False,
+                 use_case=None
                 ):
 
     PYTModel = PytorchModel()
@@ -136,15 +140,16 @@ def create_NNC_model_instance_from_object(
         model_struct = loaded_model_struct
 
     if dataset_path and model_struct:
-        PYTModelExecuter = create_imagenet_model_executer(model_struct=model_struct,
-                                                          dataset_path=dataset_path,
-                                                          lr=lr,
-                                                          epochs=epochs,
-                                                          max_batches=max_batches,
-                                                          batch_size=batch_size,
-                                                          num_workers=num_workers,
-                                                          lsa=lsa
-                                                          )
+        PYTModelExecuter = create_model_executer(model_struct=model_struct,
+                                                 dataset_path=dataset_path,
+                                                 lr=lr,
+                                                 epochs=epochs,
+                                                 max_batches=max_batches,
+                                                 batch_size=batch_size,
+                                                 num_workers=num_workers,
+                                                 lsa=lsa,
+                                                 use_case=use_case
+                                                 )
         if lsa:
             model_parameters = PYTModel.init_model_from_dict(PYTModelExecuter.model.state_dict())
     else:
@@ -153,7 +158,7 @@ def create_NNC_model_instance_from_object(
     return PYTModel, PYTModelExecuter, model_parameters
 
 
-def create_imagenet_model_executer( 
+def create_model_executer(
                             model_struct,
                             dataset_path,
                             lr=1e-4,
@@ -162,12 +167,13 @@ def create_imagenet_model_executer(
                             batch_size=64,
                             num_workers=1,
                             lsa=False,
+                            use_case=None
                             ):
     
     assert model_struct != None, "model_struct must be specified in order to create a model_executer!"
     assert dataset_path != None, "dataset_path must be specified in order to create a model_executer!"
     
-    handler = use_cases['NNR_PYT']
+    handler = use_cases['NNR_PYT'] if use_case == None else use_cases[f"{use_case}"]
 
     test_set, test_loader, val_set, val_loader, train_loader = __initialize_data_functions( handler=handler,
                                                                               dataset_path=dataset_path,
@@ -175,17 +181,17 @@ def create_imagenet_model_executer(
                                                                               num_workers=num_workers)
 
     assert (test_set!=None and test_loader!= None) or ( val_set!= None and val_loader!= None ), "Any of the pairs test_set/test_loader or val_set/val_loader must be specified in order to use data driven optimizations methods!"
-    PYTModelExecuter = ImageNetPytorchModelExecuter(handler,
-                                                    train_loader=train_loader,
-                                                    test_loader=test_loader,
-                                                    test_set=test_set,
-                                                    val_loader=val_loader,
-                                                    val_set=val_set,
-                                                    model_struct=model_struct,
-                                                    lsa=lsa,
-                                                    lr=lr,
-                                                    epochs=epochs,
-                                                    max_batches=max_batches)
+    PYTModelExecuter = ImageClassificationPytorchModelExecuter(handler,
+                                                               train_loader=train_loader,
+                                                               test_loader=test_loader,
+                                                               test_set=test_set,
+                                                               val_loader=val_loader,
+                                                               val_set=val_set,
+                                                               model_struct=model_struct,
+                                                               lsa=lsa,
+                                                               lr=lr,
+                                                               epochs=epochs,
+                                                               max_batches=max_batches)
 
     PYTModelExecuter.initialize_optimizer(lr=lr)
 
@@ -198,6 +204,12 @@ def save_to_pytorch_file( model_data, path ):
         model_dict[module_name] = torch.tensor(model_data[module_name])
     torch.save(model_dict, path)
 
+def np_to_torch(parameter_dict):
+    return {name: torch.tensor(copy.deepcopy(parameter_dict[name])) for name in parameter_dict}
+
+def torch_to_numpy(parameter_dict):
+    return {name: copy.deepcopy(param).numpy() if param.get_device == -1 else
+    copy.deepcopy(param).cpu().detach().numpy() for name, param in parameter_dict.items()}
 
 def get_model_file_with_parameters( parameters, model_struct ):
 
@@ -357,14 +369,30 @@ class PytorchModel(nnc_core.nnr_model.NNRModel):
             if model_data[module_name].size == 1:
                 model_dict[module_name] = torch.tensor(np.int64(model_data[module_name][0]))
         torch.save(model_dict, path)
-    
-    def guess_block_id_and_param_type(self, model_parameters):
+
+    def get_torch_bn_info(self, module, bn_dict=None, prefix='', bn_param=False):
+        if bn_dict is None:
+            bn_dict = OrderedDict()
+        for name, param in module._parameters.items():
+            if param is not None:
+                bn_dict[prefix + name] = bn_param
+        for name, buf in module._buffers.items():
+            if buf is not None and 'num_batches_tracked' not in name:
+                bn_dict[prefix + name] = bn_param
+        for n, m in module._modules.items():
+            if m is not None:
+                self.get_torch_bn_info(m, bn_dict, prefix + n + '.',
+                                  bn_param=True if isinstance(m, torch.nn.BatchNorm2d) else False)
+        return bn_dict
+    def guess_block_id_and_param_type(self, model_parameters, bn_info=None):
         
         try:
             block_id_and_param_type = {"block_identifier" : {}, "parameter_type" : {}}
             block_dict = dict()
             blkNum = -1
             for param in model_parameters.keys():
+                if "aux_classifier" in param: ## for DeepLabV3 demo
+                    continue
                 dims = len(model_parameters[param].shape)
                 paramShape = model_parameters[param].shape
                 splitted_param = param.split(".")
@@ -379,13 +407,26 @@ class PytorchModel(nnc_core.nnr_model.NNRModel):
                     paramType = 'weight'
                     blockId = base_block_id
                 elif dims == 1:
-                    if 'bias' in param_end or 'beta' in param_end:
+                    if bn_info and not param.endswith(".weight_scaling") and bn_info[param]:
+                        if 'weight' in param_end:
+                            paramType = 'bn.gamma'
+                            blockId = base_block_id
+                        elif 'bias' in param_end:
+                            paramType = 'bn.beta'
+                            blockId = base_block_id
+                        elif 'running_mean' in param_end:
+                            paramType = 'bn.mean'
+                            blockId = base_block_id
+                        elif 'running_var' in param_end:
+                            paramType = 'bn.var'
+                            blockId = base_block_id
+                    elif 'bias' in param_end or 'beta' in param_end:
                         paramType = 'bias'
                         blockId = base_block_id
                     elif 'running_mean' in param_end or 'moving_mean' in param_end:
                         paramType = 'bn.mean'
                         blockId = base_block_id
-                    elif 'running_var' in param_end or 'moving_variance' in param_end:                        
+                    elif 'running_var' in param_end or 'moving_variance' in param_end:
                         paramType = 'bn.var'
                         blockId = base_block_id
                     elif 'weight_scaling' in param_end:
@@ -403,7 +444,7 @@ class PytorchModel(nnc_core.nnr_model.NNRModel):
                 else:
                     paramType = 'unspecified'
                     blockId = None
-                
+
                 if blockId:
                     block_id = base_block_id + str(blkNum)
                     if block_id in block_dict.keys():
@@ -431,10 +472,10 @@ class PytorchModel(nnc_core.nnr_model.NNRModel):
                 if any(["bn." in a[1] for a in block_list]):
                     for i, val in enumerate(block_list):
                         par, parT, blkId, dims, _ = val
-                        if parT == 'weight' and dims == 1:
-                            block_list[i][1] = "bn.gamma"
-                        if parT == 'bias':
-                            block_list[i][1] = "bn.beta"
+                        # if parT == 'weight' and dims == 1:
+                        #     block_list[i][1] = "bn.gamma"
+                        # if parT == 'bias':
+                        #     block_list[i][1] = "bn.beta"
                     bn_block_list.append( block_list )
                 else:
                     weight_block_list.append(block_list)
@@ -466,7 +507,7 @@ class PytorchModel(nnc_core.nnr_model.NNRModel):
         return block_id_and_param_type
 
 
-class ImageNetPytorchModelExecuter( nnc_core.nnr_model.ModelExecute):
+class ImageClassificationPytorchModelExecuter(nnc_core.nnr_model.ModelExecute):
 
     def __init__(self, 
                  handler,
@@ -501,6 +542,9 @@ class ImageNetPytorchModelExecuter( nnc_core.nnr_model.ModelExecute):
             self.val_loader = val_loader
         if train_loader:
             self.train_loader = train_loader
+
+        if model_struct and self.handle.model_transform != None and self.handle.model_transform.__name__ in transforms.MDL_TRAFOS:
+            model_struct = self.handle.model_transform(model_struct)
 
         if model_struct:
             self.original_model = copy.deepcopy(model_struct)
@@ -593,7 +637,8 @@ class ImageNetPytorchModelExecuter( nnc_core.nnr_model.ModelExecute):
             param_types,
             lsa_flag=False,
             ft_flag=False,
-            verbose=False,     
+            verbose=False,
+            wandb_logging=False
     ):
         torch.set_num_threads(1)
         verbose = 1 if (verbose & 1) else 0
@@ -627,7 +672,7 @@ class ImageNetPytorchModelExecuter( nnc_core.nnr_model.ModelExecute):
 
         self.tuning_optimizer = torch.optim.Adam(tuning_params, lr=self.learning_rate)
 
-        perf = self.eval_model(parameters, verbose=verbose)
+        perf = self.eval_model(parameters, verbose=False)
         best_loss, best_params = perf[2], copy.deepcopy(parameters)
         if verbose:
             print(f'Validation accuracy (loss) before LSA and/or Fine Tuning: {perf[0]} ({perf[2]})')
@@ -640,7 +685,7 @@ class ImageNetPytorchModelExecuter( nnc_core.nnr_model.ModelExecute):
                 self.handle.criterion,
                 self.train_loader,
                 device=self.device,
-                verbose=verbose,
+                verbose=False,
                 freeze_batch_norm=True if lsa_flag and not ft_flag else False,
                 max_batches=self.max_batches if self.max_batches else None
             )
@@ -653,15 +698,18 @@ class ImageNetPytorchModelExecuter( nnc_core.nnr_model.ModelExecute):
                 best_params = copy.deepcopy(parameters)
             else:
                 if verbose:
-                    print(f'Early Stopping due to model convergence or overfitting')
+                    # print(f'Early Stopping due to model convergence or overfitting')
                     print(f'Epoch {e + 1}: Validation accuracy (loss) after Model Tuning: {perf[0]} ({perf[2]})')
-                break
+                # break
             if verbose:
                 if lsa_flag and not ft_flag:
                     print(f'Epoch {e+1}: Validation accuracy (loss) after Model Tuning: {perf[0]} ({perf[2]})')
-        if verbose:
-            print(f'Test performance (top1, top5, loss) after LSA and/or Fine Tuning: '
-                  f'{self.test_model(parameters, verbose=verbose)}')
+
+            if wandb_logging:
+                wandb.log({"LSA_val_acc": perf[0], "LSA_val_loss": perf[2], "LSA_train_acc": train_acc, "LSA_train_loss": loss})
+        if verbose or wandb_logging:
+            test_perf = self.test_model(parameters, verbose=verbose)
+            print(f'Test performance (top1, top5, loss) after LSA and/or Fine Tuning: {test_perf}')
 
         lsa_params, ft_params = {}, {}
         for name in best_params:
@@ -669,6 +717,11 @@ class ImageNetPytorchModelExecuter( nnc_core.nnr_model.ModelExecute):
                 lsa_params[name] = best_params[name].cpu().numpy().flatten()
             elif ft_flag and param_types[name] != 'weight.ls' and param_types[name] in nnc_core.nnr_model.O_TYPES:
                 ft_params[name] = best_params[name].cpu().numpy()
+
+        if wandb_logging:
+            wandb.log({"LSA_test_acc": test_perf[0], "LSA_test_loss": test_perf[2]})
+            wandb.log({"lsa_params": lsa_params})
+
         return (lsa_params, ft_params)
 
 

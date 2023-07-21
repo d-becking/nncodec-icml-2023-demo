@@ -1,7 +1,7 @@
 '''
 The copyright in this software is being made available under the Clear BSD
-License, included below. No patent rights, trademark rights and/or 
-other Intellectual Property Rights other than the copyrights concerning 
+License, included below. No patent rights, trademark rights and/or
+other Intellectual Property Rights other than the copyrights concerning
 the Software are granted under this license.
 
 The Clear BSD License
@@ -37,36 +37,28 @@ IN CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE)
 ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE
 POSSIBILITY OF SUCH DAMAGE.
 '''
-import numpy as np
-import torch
 
-def get_topk_accuracy_per_batch(output, target, topk=(1,)):
-    """Computes the accuracy over the k top predictions for the specified values of k"""
-    with torch.no_grad():
-        maxk = max(topk)
-        batch_size = target.size(0)
+from torchvision import datasets, transforms
 
-        _, pred = output.topk(maxk, 1, True, True)
-        pred = pred.t()
-        correct = pred.eq(target.reshape(1, -1).expand_as(pred))
+classes = {1: 'aeroplane', 2: 'bicycle', 3: 'bird', 4: 'boat', 5: 'bottle', 6: 'bus', 7: 'car', 8: 'cat', 9: 'chair',
+           10: 'cow', 11: 'diningtable', 12: 'dog', 13: 'horse', 14: 'motorbike', 15: 'person', 16: 'pottedplant',
+           17:'sheep', 18: 'sofa', 19 : 'train', 20: 'tvmonitor'}
 
-        res = []
-        for k in topk:
-            correct_k = correct[:k].reshape(-1).float().sum(0, keepdim=True)
-            res.append(correct_k.mul_(100.0 / batch_size))
+def voc_dataloaders(root, split='test'):
 
-        return res
+    data_trafo = transforms.Compose([
+                transforms.CenterCrop(500),
+                transforms.ToTensor(),
+            ])
 
+    if split == 'train':
+        train_data = datasets.VOCSegmentation(root=root, image_set=split, transform=data_trafo, target_transform=data_trafo)
+        return train_data
 
-def get_pmf(quant_tensor):
-    """
-    Calculates the probabilitiy mass function (pmf) which here simply is the number of weights assigned to a
-    specific centroid devided by th number of all weights.
-    """
-    _, C_cts = np.unique(quant_tensor, return_counts=True)
-    return C_cts / quant_tensor.size
+    elif split == 'val':
+        val_data = datasets.VOCSegmentation(root=root, image_set='trainval', transform=data_trafo, target_transform=data_trafo)
+        return val_data
 
-def get_entropy(quant_tensor):
-    """ Calculates the entropy of a quantized weight tensor."""
-    pmf = get_pmf(quant_tensor)
-    return sum([-P * np.log2(P) for P in pmf if P != 0])
+    elif split == 'test':
+        test_data = datasets.VOCSegmentation(root=root, image_set='val', transform=data_trafo, target_transform=data_trafo)
+        return test_data

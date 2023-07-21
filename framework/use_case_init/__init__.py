@@ -41,7 +41,7 @@ import numpy as np
 import torch
 import tensorflow as tf
 from torch.utils.data import dataloader, random_split
-from framework.applications.datasets import imagenet
+from framework.applications.datasets import imagenet, cifar, voc2012
 from framework.applications.utils import evaluation, train, transforms
 
 class ModelSetting:
@@ -117,9 +117,9 @@ class ModelSetting:
 
         test_images, test_labels = zip(*test_set.imgs)
         test_loader = tf.data.Dataset.from_tensor_slices((list(test_images), list(test_labels)))
-        test_loader = test_loader.map(lambda image, label: tf.py_function(self.preprocess,
-                                                                              inp=[image, label],
-                                                                              Tout=[tf.float32, tf.int32]), num_parallel_calls=num_workers).batch(
+        test_loader = test_loader.map(lambda image, label: tf.py_function(self.tef_preprocess,
+                                                                          inp=[image, label],
+                                                                          Tout=[tf.float32, tf.int32]), num_parallel_calls=num_workers).batch(
                                                                                 batch_size)
 
         return test_set, test_loader
@@ -133,15 +133,15 @@ class ModelSetting:
 
         val_images, val_labels = zip(*val_set.imgs)
         val_loader = tf.data.Dataset.from_tensor_slices((list(val_images), list(val_labels)))
-        val_loader = val_loader.map(lambda image, label: tf.py_function(self.preprocess,
-                                                                              inp=[image, label],
-                                                                              Tout=[tf.float32, tf.int32]), num_parallel_calls=num_workers).batch(
+        val_loader = val_loader.map(lambda image, label: tf.py_function(self.tef_preprocess,
+                                                                        inp=[image, label],
+                                                                        Tout=[tf.float32, tf.int32]), num_parallel_calls=num_workers).batch(
                                                                                 batch_size)
 
         return val_set, val_loader
 
     
-    def preprocess(
+    def tef_preprocess(
                     self,
                     image,
                     label
@@ -163,6 +163,7 @@ class ModelSetting:
         elif self.__model_name == 'EfficientNetB7':
             image_size = 600
 
+        ##TODO make sure that this is a data transform only, i.e., is in use_case_init/__init__.py DATA_TRAFOS
         image, label = self.model_transform(image, label, image_size=image_size)
 
         if 'DenseNet' in self.__model_name:
@@ -193,12 +194,27 @@ class ModelSetting:
 
 # supported use cases
 use_cases = {
-    "NNR_PYT":  ModelSetting( None,
-                          evaluation.evaluate_classification_model,
-                          train.train_classification_model,
-                          imagenet.imagenet_dataloaders,
-                          torch.nn.CrossEntropyLoss()
-                          ),
+
+    "NNR_PYT_VOC": ModelSetting(None,  # transforms.model_transform_ImageNet_to_CIFAR100,
+                                   evaluation.evaluate_classification_model,
+                                   train.train_classification_model,
+                                   voc2012.voc_dataloaders,
+                                   torch.nn.CrossEntropyLoss()
+                                   ),
+
+    "NNR_PYT_CIF100":  ModelSetting(None,
+                                    evaluation.evaluate_classification_model,
+                                    train.train_classification_model,
+                                    cifar.cifar100_dataloaders,
+                                    torch.nn.CrossEntropyLoss()
+                                    ),
+
+    "NNR_PYT": ModelSetting(None,
+                            evaluation.evaluate_classification_model,
+                            train.train_classification_model,
+                            imagenet.imagenet_dataloaders,
+                            torch.nn.CrossEntropyLoss()
+                            ),
 
     "NNR_TEF": ModelSetting( transforms.transforms_tef_model_zoo,
                             evaluation.evaluate_classification_model_TEF,
