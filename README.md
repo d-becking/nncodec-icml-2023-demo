@@ -1,7 +1,11 @@
 <div align="center">
 
-# NNCodec @ ICML 2023 Neural Compression Workshop
+<img src="https://github.com/d-becking/nncodec-icml-2023-demo/assets/56083075/85f79cea-1da0-4129-a859-5e99b0609a4f" width="518"/>
+
+# @ ICML 2023 Neural Compression Workshop
+
 [![Conference](https://img.shields.io/badge/ICML-Paper-blue)](https://openreview.net/forum?id=5VgMDKUgX0)
+
 </div>
 
 Our spotlight paper titled **"NNCodec: An Open Source Software Implementation of the Neural Network Coding 
@@ -10,8 +14,6 @@ ISO/IEC Standard"** is presented at the ICML 2023 [Neural Compression Workshop](
 
 **TL;DR** -  The paper presents NNCodec, analyses its coding tools with respect to the principles of information theory 
 and gives comparative results for a broad range of neural network architectures. Find the article [here](https://openreview.net/forum?id=5VgMDKUgX0).
-
-
 
 ## Table of Contents
 - [Information](#information)
