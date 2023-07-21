@@ -1,0 +1,11 @@
+--extra-index-url https://download.pytorch.org/whl/cu113
+Click>=7.0
+scikit-learn>=0.23.1
+tqdm>=4.32.2
+h5py>=3.1.0
+pybind11>=2.6.2
+tensorflow>=2.6.0
+pandas>=1.0.5
+opencv-python>=4.4.0.46
+torch>=1.8.1 
+torchvision>=0.9.1 
