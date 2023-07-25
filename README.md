@@ -12,7 +12,7 @@ Our spotlight paper titled **"NNCodec: An Open Source Software Implementation of
 ISO/IEC Standard"** is presented at the ICML 2023 [Neural Compression Workshop](https://neuralcompression.github.io/workshop23).
 
 
-**TL;DR** -  The paper presents NNCodec, analyses its coding tools with respect to the principles of information theory 
+**TL;DR** -  The paper presents NNCodec, analyzes its coding tools with respect to the principles of information theory 
 and gives comparative results for a broad range of neural network architectures. Find the article [here](https://openreview.net/forum?id=5VgMDKUgX0).
 
 ## Table of Contents
