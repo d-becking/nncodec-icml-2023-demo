@@ -1,6 +1,6 @@
 <div align="center">
 
-<img src="https://github.com/d-becking/nncodec-icml-2023-demo/assets/56083075/85f79cea-1da0-4129-a859-5e99b0609a4f" width="518"/>
+![nncodec_logo](https://github.com/d-becking/nncodec-icml-2023-demo/assets/56083075/f310c92e-537e-4960-b223-7ec51c9accc3)
 
 # @ ICML 2023 Neural Compression Workshop
 
