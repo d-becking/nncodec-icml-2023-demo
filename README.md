@@ -5,6 +5,7 @@
 # @ ICML 2023 Neural Compression Workshop
 
 [![Conference](https://img.shields.io/badge/ICML-Paper-blue)](https://openreview.net/forum?id=5VgMDKUgX0)
+[![Conference](https://img.shields.io/badge/ICML-Poster-red)](https://datacloud.hhi.fraunhofer.de/s/QFKiqCYE3Q8ptAy)
 
 </div>
 
@@ -19,8 +20,8 @@ and gives comparative results for a broad range of neural network architectures.
 - [Information](#information)
 - [Installation](#installation)
 - [NNCodec Usage](#nncodec-usage):
-  * [Demo](#demo)
   * [Reproducibility of paper results](#reproducibility-of-paper-results)
+  * [Demo](#demo)
 - [Citation and Publications](#citation-and-publications)
 - [License](#license)
 
@@ -30,7 +31,7 @@ This repository is for reproducing the results shown in the paper. Additionally,
 segmentation demo, prepared for the Neural Compression Workshop (ICML'23). How to run the code, paper result reproducibility 
 and the demo are described in the [NNCodec Usage](#nncodec-usage) section.
 
-The official NNCodec git repository that served as the basis for this repo can be found here:
+The official NNCodec git repository, that served as the basis for this repo, can be found here:
 
 [![Conference](https://img.shields.io/badge/fraunhoferhhi-nncodec-green)](https://github.com/fraunhoferhhi/nncodec)
 
@@ -87,64 +88,71 @@ import nnc
 
 ## NNCodec Usage
 
+Before running the code, first create the environment as described in [Installation](#installation), and activate it.
+
 ### Reproducibility of paper results
-
-[TBD] describe how to reproduce the results of the paper using `main.py`.
-
-As previously mentioned, first create the environment and activate it. Execute 
-
+Execute 
 ```shell
 python main.py --help
 ```
 for parser argument descriptions.
 
-W&B:
+`--dataset_path` must be set for all runs in accordance with your local data directories. For the CIFAR experiment, the data will be downloaded (< 200MB) to --dataset_path if the data is not available there.
+
+The `--verbose` flag enables extended stdout printing of intermediate results and steps.
+
+**Quantization:**
+
+The `--qp` argument specifies an integer quantization step size for weight matrices (usually in the range of -20 to -50, where -50 indicates finer quantization and -20 indicates coarser quantization). The `--nonweight_qp` argument sets the qp for 1D parameter types and non-trainable parameters like BatchNorm statistics (defaults to --nonweight_qp=-75).
+
+#### CIFAR-100 experiments (w/ ResNet56):
+
+Basic compression setting w/o advanced coding tools and a quantization parameter (qp) of -20:
+
+```shell
+python main.py --model=resnet56 --model_path=./example/ResNet56_CIF100.pt --dataset=CIFAR100dataset --dataset_path=<YOUR_PATH> --qp=-20
+```
+
+For applying dependent quantization (DQ), qp-optimization and BatchNorm folding (BNF) add 
+
+```shell
+--use_dq --opt_qp --bnf
+```
+
+Applying local scaling adaptation (LSA) additionally requires a learning rate (lr) and a number of training epochs. We used an initial lr of 1e-3 and 30 training epochs for our experiments (and a --batch_size=64):
+
+```shell
+--lsa --lr=1e-3 --epochs=30
+```
+#### ImageNet experiments:
+
+For ImageNet experiments with ResNet50, replace --dataset and --model by 
+```shell
+--dataset=ImageNet --model=resnet50
+```
+EfficientNet and Vision Transformer deployment is achieved by setting --model to "efficientnet_b0" and "vit_b_16", respectively. In general, all models of the torchvision model zoo can be inserted here (see output of `python main.py --help`). `--model_path` is not required, if a pretrained model should be downloaded from the torchvision model zoo.
+
+#### Logging (comparative) results using Weights & Biases
+
+We used Weights & Biases (wandb) for experiment logging. Enabling `--wandb` also enables Huffman and bzip2 encoding of the data payloads and the calculation of the Shannon entropy. If you want to use it, add your wandb key and optionally an experiment identifier for the run (--wandb_run_name).
+
+```shell
 --wandb, --wandb_key, --wandb_run_name
-
-RN56
---dataset_path=/home/becking/PycharmProjects/data --dataset=CIFAR100dataset --model_path=./example/ResNet56_CIF100.pt --model=resnet56 --epochs=3 --bnf --use_dq --opt_qp --lsa
-
---workers=4 --qp=-30 --nonweight_qp=-40 --verbose --batch_size=64 --dataset_path=/home/becking/PycharmProjects/data/ImageNet-complete --dataset=ImageNet --model=resnet50 --bnf --use_dq --opt_qp
-
-efficientnet_b0, vit_b_16
-
-
-For the model, you can choose an
---model=resnet56
-
---model_path=./example/ResNet56_CIF100.pt
-
---dataset=CIFAR100dataset
-
---dataset_path=/mnt/datasets
-
---qp=-20 
-
---use_dq
-
---opt_qp
-
---bnf
-
---lsa
-
---lr=1e-3
-
---epochs
-
---wandb
-
+```
 
 ### Demo
 
-[TBD] describe how to use the jupyter notebook `icml_demo.ipynb` for image segmentation w/ compressed deeplabv3.
-
-If executed with main.py, set --plot_segmentation_masks True.
---workers=0 --qp=-36 --opt_qp --model=deeplabv3_resnet50 --dataset=VOC --dataset_path=./example/VOC_demo --plot_segmentation_masks --batch_size=1 --verbose
-
+The image segmentation demo (with Pascal VOC data) is more visual, showing model degradation due to compression in the form of incomplete segmentation masks, compared to less expressive top-1 accuracies:
 
 <img src="https://github.com/d-becking/nncodec-icml-2023-demo/assets/56083075/b721654a-a2b3-4493-9828-a18f79bc0451"  width="500">
 
+To test different quantization parameters and coding tools, the jupyter notebook `icml_demo.ipynb` can be used. Alternatively, use the `main.py` document with the following parser arguments:
+
+```shell
+python main.py --model=deeplabv3_resnet50 --dataset=VOC --dataset_path=./example/VOC_demo --plot_segmentation_masks --batch_size=1 --qp=-44 --verbose
+```
+
+Any of the Pascal VOC image sampes can be used for the demo. Just update/replace the samples, ground truth and *.txt files in ./example/VOC_demo/VOCdevkit/VOC2012/.
 
 ## Citation and Publications
 If you use NNCodec in your work, please cite:
