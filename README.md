@@ -27,7 +27,7 @@ and gives comparative results for a broad range of neural network architectures.
 ## Information
 
 This repository is for reproducing the results shown in the paper. Additionally, it includes a Pascal VOC image 
-segmentation demo, prepared for the Neural Compression Workshop (ICML'23). Running the code, paper result reproducibility 
+segmentation demo, prepared for the Neural Compression Workshop (ICML'23). How to run the code, paper result reproducibility 
 and the demo are described in the [NNCodec Usage](#nncodec-usage) section.
 
 The official NNCodec git repository that served as the basis for this repo can be found here:
@@ -86,15 +86,64 @@ import nnc
 ```
 
 ## NNCodec Usage
-### Demo
-
-[TBD] describe how to use the jupyter notebook `icml_demo.ipynb` for image segmentation w/ compressed deeplabv3.
 
 ### Reproducibility of paper results
 
 [TBD] describe how to reproduce the results of the paper using `main.py`.
 
+As previously mentioned, first create the environment and activate it. Execute 
 
+```shell
+python main.py --help
+```
+for parser argument descriptions.
+
+W&B:
+--wandb, --wandb_key, --wandb_run_name
+
+RN56
+--dataset_path=/home/becking/PycharmProjects/data --dataset=CIFAR100dataset --model_path=./example/ResNet56_CIF100.pt --model=resnet56 --epochs=3 --bnf --use_dq --opt_qp --lsa
+
+--workers=4 --qp=-30 --nonweight_qp=-40 --verbose --batch_size=64 --dataset_path=/home/becking/PycharmProjects/data/ImageNet-complete --dataset=ImageNet --model=resnet50 --bnf --use_dq --opt_qp
+
+efficientnet_b0, vit_b_16
+
+
+For the model, you can choose an
+--model=resnet56
+
+--model_path=./example/ResNet56_CIF100.pt
+
+--dataset=CIFAR100dataset
+
+--dataset_path=/mnt/datasets
+
+--qp=-20 
+
+--use_dq
+
+--opt_qp
+
+--bnf
+
+--lsa
+
+--lr=1e-3
+
+--epochs
+
+--wandb
+
+
+### Demo
+
+[TBD] describe how to use the jupyter notebook `icml_demo.ipynb` for image segmentation w/ compressed deeplabv3.
+
+If executed with main.py, set --plot_segmentation_masks True.
+--workers=0 --qp=-36 --opt_qp --model=deeplabv3_resnet50 --dataset=VOC --dataset_path=./example/VOC_demo --plot_segmentation_masks --batch_size=1 --verbose
+
+
+<img src="https://github.com/d-becking/nncodec-icml-2023-demo/assets/56083075/b721654a-a2b3-4493-9828-a18f79bc0451"  width="500">
 
 
 ## Citation and Publications
