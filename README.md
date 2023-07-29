@@ -28,8 +28,7 @@ and gives comparative results for a broad range of neural network architectures.
 ## Information
 
 This repository is for reproducing the results shown in the paper. Additionally, it includes a Pascal VOC image 
-segmentation demo, prepared for the Neural Compression Workshop (ICML'23). How to run the code, paper result reproducibility 
-and the demo are described in the [NNCodec Usage](#nncodec-usage) section.
+segmentation demo, prepared for the Neural Compression Workshop (ICML'23). How to run the code, reproduce paper results and run the demo is described in the [NNCodec Usage](#nncodec-usage) section.
 
 The official NNCodec git repository, that served as the basis for this repo, can be found here:
 
@@ -97,9 +96,9 @@ python main.py --help
 ```
 for parser argument descriptions.
 
-`--dataset_path` must be set for all runs in accordance with your local data directories. For the CIFAR experiment, the data will be downloaded (< 200MB) to --dataset_path if the data is not available there.
+`--dataset_path` must be specified in accordance with your local data directories. For the CIFAR experiment, the data will be downloaded (< 200MB) to --dataset_path if the data is not available there.
 
-The `--verbose` flag enables extended stdout printing of intermediate results and steps.
+The `--verbose` flag enables extended stdout printing of intermediate results and progress of the compression pipeline.
 
 **Quantization:**
 
@@ -142,7 +141,7 @@ We used Weights & Biases (wandb) for experiment logging. Enabling `--wandb` also
 
 ### Demo
 
-The image segmentation demo (with Pascal VOC data) is more visual, showing model degradation due to compression in the form of incomplete segmentation masks, compared to less expressive top-1 accuracies:
+The image segmentation demo (using Pascal VOC data) is more visual and demonstrates model degradation due to compression in the form of inaccurate segmentation masks, compared to potentially less expressive top-1 accuracies in image classification:
 
 <img src="https://github.com/d-becking/nncodec-icml-2023-demo/assets/56083075/b721654a-a2b3-4493-9828-a18f79bc0451"  width="500">
 
